@@ -1,0 +1,26 @@
+# --- The Brain & Orchestration ---
+langchain
+langchain-google-genai
+langgraph
+langchain-community
+langchain-experimental
+
+# --- The Memory (Vector DB) ---
+langchain-chroma
+chromadb
+
+# --- The Tools (Action Layer) ---
+tavily-python
+pydantic
+pandas               # For analyzing CSV/Excel files
+openpyxl             # For writing Excel files
+playwright           # For controlling the Browser
+lxml                 # For parsing HTML
+pillow               # For image processing (Screenshots)
+
+# --- The Interface ---
+rich
+python-dotenv
+
+# --- The Automation (Airflow) ---
+apache-airflow==2.10.3
