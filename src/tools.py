@@ -1,35 +1,49 @@
 import os
-from langchain_community.tools.tavily_search import TavilySearchResults
-from langchain_community.agent_toolkits.file_management.toolkit import FileManagementToolkit
-from langchain_community.agent_toolkits.playwright.toolkit import PlaywrightBrowserToolkit
-from langchain_community.tools.playwright.utils import create_sync_playwright_browser
-from langchain_community.tools.shell.tool import ShellTool
+from langchain_community.tools.playwright.navigate import NavigateTool
+from langchain_community.tools.playwright.click import ClickTool
+from langchain_community.tools.playwright.extract_text import ExtractTextTool
+from langchain_community.tools.playwright.current_page import CurrentWebPageTool
+from langchain_community.tools.playwright.get_elements import GetElementsTool
 
+from langchain_community.tools.file_management.write import WriteFileTool
+from langchain_community.tools.file_management.read import ReadFileTool
+from langchain_community.tools.file_management.list_dir import ListDirectoryTool
 
-browser = create_sync_playwright_browser(headless=False)
+from src.custom_tools import (
+    TypeInputTool, ScrollTool, ScreenshotTool, 
+    HoverTool, GoBackTool, ReloadTool, GetHtmlTool, EvaluateJsTool, # <--- NEW
+    DownloadFileTool, SaveFileFromUrlTool
+)
 
-def get_core_tools():
-    tools = []
-    
-    search_tool = TavilySearchResults(max_results=3)
-    tools.append(search_tool)
-    
-    file_toolkit = FileManagementToolkit(
-        root_dir=os.getcwd(),
-        selected_tools=["read_file", "write_file", "list_directory"]
-    )
-    tools.extend(file_toolkit.get_tools())
-    
-    browser_toolkit = PlaywrightBrowserToolkit.from_browser_tools(
-        browser,
-        selected_tools=["click_element", "navigate_browser", "extract_text", "get_elements"]
-    )
-    tools.extend(browser_toolkit.get_tools())
-    
-    shell_tool = ShellTool()
-    shell_tool.description = shell_tool.description + f"args {shell_tool.args}".replace(
-        "{", "{{"
-    ).replace("}", "}}")
-    tools.append(shell_tool)
-    
-    return tools
+def get_tools(async_browser):
+    root_dir = os.getcwd()
+
+    return [
+        # 1. Navigation
+        NavigateTool(async_browser=async_browser),
+        GoBackTool(async_browser=async_browser),    # NEW
+        ReloadTool(async_browser=async_browser),    # NEW
+        ScrollTool(async_browser=async_browser),
+        
+        # 2. Perception (Eyes)
+        CurrentWebPageTool(async_browser=async_browser),
+        ExtractTextTool(async_browser=async_browser),
+        GetElementsTool(async_browser=async_browser),
+        GetHtmlTool(async_browser=async_browser),   # NEW
+        ScreenshotTool(async_browser=async_browser),
+        
+        # 3. Interaction (Hands)
+        ClickTool(async_browser=async_browser),
+        HoverTool(async_browser=async_browser),     # NEW
+        TypeInputTool(async_browser=async_browser),
+        EvaluateJsTool(async_browser=async_browser), # NEW
+        
+        # 4. Downloading
+        DownloadFileTool(async_browser=async_browser),
+        SaveFileFromUrlTool(),
+        
+        # 5. File System
+        WriteFileTool(root_dir=root_dir),
+        ReadFileTool(root_dir=root_dir),
+        ListDirectoryTool(root_dir=root_dir)
+    ]

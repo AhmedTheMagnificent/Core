@@ -1,98 +1,62 @@
+import uuid
 import sys
+import asyncio
 from dotenv import load_dotenv
-from rich.console import Console
-from rich.panel import Panel
-from rich.markdown import Markdown
-from rich.text import Text
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
+from playwright.async_api import async_playwright
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-# Import our Brain
-from src.brain import build_core_brain
+from src.brain import get_brain
 
-# 1. SETUP
 load_dotenv()
-console = Console()
 
-def print_ai_response(text):
-    """Helper to print a nice box for the answer."""
-    console.print(Panel(
-        Markdown(text),
-        title="[bold green]CORE[/bold green]",
-        border_style="green",
-        expand=False
-    ))
-
-def print_tool_activity(tool_name, tool_input):
-    """Helper to show what tool is being used."""
-    console.print(f"[dim italic cyan]>> Action: Using {tool_name}[/dim italic cyan]")
-    console.print(f"[dim italic]   Input: {tool_input}[/dim italic]")
-
-def main():
-    # Clear screen for a fresh start
-    console.clear()
-    console.print(Panel("[bold white]SYSTEM ONLINE: CORE V1.0[/bold white]", style="bold white on blue"))
+async def run_chat():
+    print("--- ASYNC BROWSER AGENT ONLINE ---")
     
-    # 2. INITIALIZE BRAIN
-    try:
-        graph = get_core_brain()
-    except Exception as e:
-        console.print(f"[bold red]Startup Error: {e}[/bold red]")
-        console.print("[yellow]Did you install the requirements? (pip install -r requirements.txt)[/yellow]")
-        return
-
-    # Configuration for Memory (Persistence)
-    # Keeping thread_id constant means it remembers you across restarts
-    config = {"configurable": {"thread_id": "main_user"}}
-
-    # 3. MAIN LOOP
-    while True:
-        try:
-            # Get User Input
-            user_input = console.input("\n[bold yellow]User > [/bold yellow]")
+    async with AsyncSqliteSaver.from_conn_string("browser_state.db") as memory:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=False)
             
-            # Exit Commands
-            if user_input.lower() in ["exit", "quit", "shutdown"]:
-                console.print("[red]Shutting down Core...[/red]")
-                break
+            try:
+                graph = get_brain(browser, memory)
+            except Exception as e:
+                print(f"Startup Error: {e}")
+                return
 
-            # 4. RUNNING THE GRAPH
-            # We use a spinner so you know it's working
-            with console.status("[bold cyan]Core is processing...[/bold cyan]", spinner="dots"):
-                
-                # Stream the events (Thinking -> Tool -> Thinking -> Answer)
-                events = graph.stream(
-                    {"messages": [HumanMessage(content=user_input)]},
-                    config,
-                    stream_mode="values"
-                )
+            session_id = str(uuid.uuid4())
+            config = {"configurable": {"thread_id": session_id}}
+            print(f"Session ID: {session_id}")
 
-                for event in events:
-                    if "messages" in event:
-                        message = event["messages"][-1]
-                        
-                        # Case A: AI wants to use a Tool
-                        if message.type == "ai" and message.tool_calls:
-                            for tool in message.tool_calls:
-                                print_tool_activity(tool["name"], tool["args"])
-                        
-                        # Case B: AI has a final answer (text content)
-                        # We wait until it has content AND no tool calls to print the final block
-                        elif message.type == "ai" and message.content and not message.tool_calls:
-                            # We clear the spinner line just before printing result
-                            pass 
+            while True:
+                try:
+                    user_input = await asyncio.to_thread(input, "\nCommand > ")
+                    if user_input.lower() in ["exit", "quit"]: break
 
-            # Print the final message from the state (Last message)
-            snapshot = graph.get_state(config)
-            if snapshot.values and snapshot.values["messages"]:
-                last_msg = snapshot.values["messages"][-1]
-                if last_msg.type == "ai" and last_msg.content:
-                    print_ai_response(last_msg.content)
+                    print("... Working ...")
 
-        except KeyboardInterrupt:
-            console.print("\n[red]Interrupted by user.[/red]")
-            break
-        except Exception as e:
-            console.print(f"[bold red]Critical Error: {e}[/bold red]")
+                    async for event in graph.astream(
+                        {"messages": [HumanMessage(content=user_input)]},
+                        config,
+                        stream_mode="values"
+                    ):
+                        if "messages" in event:
+                            msg = event["messages"][-1]
+                            
+                            if msg.type == "ai" and msg.tool_calls:
+                                for tool in msg.tool_calls:
+                                    # --- FIX: Print the Arguments (e.g. selector='div') ---
+                                    args = tool['args']
+                                    print(f"   [Tool] {tool['name']} -> {str(args)[:100]}...")
+                            
+                            elif msg.type == "ai" and msg.content and not msg.tool_calls:
+                                print(f"\nAGENT: {msg.content}")
+
+                except KeyboardInterrupt: break
+                except Exception as e: print(f"Runtime Error: {e}")
+
+            await browser.close()
 
 if __name__ == "__main__":
-    main()
+    if sys.platform.startswith("win"):
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    asyncio.run(run_chat())
