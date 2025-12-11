@@ -11,7 +11,7 @@ from src.brain import get_brain
 load_dotenv()
 
 async def run_chat():
-    print("--- ASYNC BROWSER AGENT ONLINE ---")
+    print("ONLINE")
     
     async with AsyncSqliteSaver.from_conn_string("browser_state.db") as memory:
         async with async_playwright() as p:
@@ -44,7 +44,6 @@ async def run_chat():
                             
                             if msg.type == "ai" and msg.tool_calls:
                                 for tool in msg.tool_calls:
-                                    # --- FIX: Print the Arguments (e.g. selector='div') ---
                                     args = tool['args']
                                     print(f"   [Tool] {tool['name']} -> {str(args)[:100]}...")
                             

@@ -1,6 +1,7 @@
-import json
-import asyncio
 from typing import Annotated, TypedDict, List, Any
+import json
+import os
+import asyncio
 
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -14,14 +15,16 @@ from src.tools import get_tools
 class AgentState(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
 
-def get_brain(async_browser, checkpointer):
-    tools = get_tools(async_browser)
+def get_brain(browser, checkpointer):
+    tools = get_tools(browser)
 
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
-        temperature=0,
-        max_retries=2
+        model="gemini-2.5-flash",
+        temperature=0.0,
+        max_retries=2,
+        api_key="AIzaSyAxYAtaHjFDNuoLAzp-srI_doEiX79BCGg"
     )
+    
     llm_with_tools = llm.bind_tools(tools)
 
     def clean_content(content: Any) -> str:
@@ -32,21 +35,26 @@ def get_brain(async_browser, checkpointer):
 
     async def agent_node(state: AgentState):
         system_prompt = SystemMessage(content="""
-        You are a COMPLETE Autonomous Web Agent.
+        You are a powerful file-management agent as well as a powerful web-automation agent
         
-        STRATEGY:
-        1. SEARCH: 'https://duckduckgo.com/?q=QUERY'
-        
-        2. INTERACT (Click/Hover/Type):
-           - NEVER GUESS SELECTORS.
-           - STEP 1: Use 'get_elements' to see the code (e.g. get_elements(selector='nav') or get_elements(selector='a')).
-           - STEP 2: Pick the specific ID or Class from the result.
-           - STEP 3: Use 'click_element', 'hover_element', or 'type_input'.
-        
-        3. DEBUGGING:
-           - If a tool fails, use 'take_screenshot' to see why.
-        
-        If a tool returns "Success", assume it worked.
+        You can:
+        - list files
+        - read files
+        - write files
+        - delete files
+        - search files
+        - move files
+        - copy files
+        - click_element
+        - navigate_browser
+        - previous_webpage
+        - extract_text
+        - extract_hyperlinks
+        - get_elements
+        - current_webpage
+ 
+        Always respond clearly.
+        also you are a really humble baymax like assistant that knows about every tech stuff as well.
         """)
         
         clean_messages = [system_prompt]
@@ -69,7 +77,6 @@ def get_brain(async_browser, checkpointer):
             else:
                 clean_messages.append(msg)
         
-        await asyncio.sleep(2.0)
         
         try:
             response = await llm_with_tools.ainvoke(clean_messages)
@@ -80,6 +87,7 @@ def get_brain(async_browser, checkpointer):
             return {"messages": [AIMessage(content="Cooling down.")]}
 
     workflow = StateGraph(AgentState)
+    
     workflow.add_node("agent", agent_node)
     workflow.add_node("tools", ToolNode(tools))
     workflow.set_entry_point("agent")
@@ -87,3 +95,5 @@ def get_brain(async_browser, checkpointer):
     workflow.add_edge("tools", "agent")
 
     return workflow.compile(checkpointer=checkpointer)
+
+
